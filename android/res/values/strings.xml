@@ -33,10 +33,7 @@
   <string name="espeak_volume">Volume</string>
   <string name="formatter_wpm">%s WPM</string>
   <string name="formatter_percentage">%s%%</string>
-  <string name="resetRateToDefault">Set speech rate to default</string>
-  <string name="resetPitchToDefault">Set pitch to default</string>
-  <string name="resetRangeToDefault">Set pitch variation to default</string>
-  <string name="resetVolumeToDefault">Set volume to default</string>
+  <string name="resetToDefault">Set to default</string>
   <string name="espeak_pitch_range">Pitch variation</string>
   <string name="espeak_variant">Voice variant</string>
   <string name="espeak_voice_settings">Voice settings</string>

@@ -26,8 +26,10 @@ import android.preference.PreferenceManager;
 import android.util.AttributeSet;
 import android.view.HapticFeedbackConstants;
 import android.view.InputDevice;
+import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
@@ -37,63 +39,78 @@ import android.widget.TextView;
 import com.reecedunn.espeak.R;
 import com.reecedunn.espeak.VoiceSettings;
 
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * A dialog preference that edits one or more of eSpeak's numeric voice
+ * parameters. One section -- name, value, slider, reset button -- is added to
+ * the dialog per parameter.
+ *
+ * A phone hosts all four parameters in a single dialog. Wear gives each
+ * parameter its own preference, and therefore its own dialog, because the
+ * rotating crown only ever delivers its scroll events to the focused view and
+ * a watch has no D-pad to move focus with. A second slider in the same dialog
+ * would be unreachable by the crown, so the split is a requirement of the
+ * input model rather than a matter of screen size. See TtsSettingsActivity.
+ */
 public class SeekBarPreference extends DialogPreference
 {
-    // -------- UI --------
-    private SeekBar mRate;
-    private SeekBar mPitch;
-    private SeekBar mRange;
-    private SeekBar mVol;
+    /**
+     * One editable parameter: where its value is stored, how it is presented,
+     * and -- while the dialog is open -- the views bound to it.
+     */
+    public static class Parameter
+    {
+        private final String key;
+        private final String title;
+        private final int min;
+        private final int max;
+        private final int defaultValue;
+        private final String formatter;
 
-    private TextView mRateText;
-    private TextView mPitchText;
-    private TextView mRangeText;
-    private TextView mVolText;
+        /** The value shown by the slider right now. */
+        private int current;
+        /** The value to fall back to if the dialog is cancelled. */
+        private int saved;
 
-    private CheckBox mRateBoost;
+        /** Only the speech rate carries the rate-boost checkbox. */
+        private boolean hasRateBoost;
+        private boolean boost;
+        private boolean savedBoost;
 
-    private Button mResetRate;
-    private Button mResetPitch;
-    private Button mResetRange;
-    private Button mResetVol;
+        private SeekBar mSeekBar;
+        private TextView mValueText;
+        private CheckBox mRateBoost;
 
-    // -------- Rate --------
-    private String mRateTitle;
-    private int mRateMin = 0;
-    private int mRateMax = 100;
-    private int mRateDefault = 50;
-    private int mRateCurrent = 50;
-    private int mOldRate = 50;
-    private boolean mRateBoostCurrent = false;
-    private boolean mOldRateBoost = false;
-    private String mRateFormatter = "%s";
+        /**
+         * True between onStartTrackingTouch and onStopTrackingTouch. A drag
+         * emits a progress change per pixel, so persisting is deferred to the
+         * end of the gesture; see {@link #persist}.
+         */
+        private boolean dragging;
 
-    // -------- Pitch --------
-    private String mPitchTitle;
-    private int mPitchMin = 0;
-    private int mPitchMax = 100;
-    private int mPitchDefault = 50;
-    private int mPitchCurrent = 50;
-    private int mOldPitch = 50;
-    private String mPitchFormatter = "%s";
+        public Parameter(String key, String title, int min, int max, int defaultValue, int current, String formatter)
+        {
+            this.key = key;
+            this.title = title;
+            this.min = min;
+            this.max = max;
+            this.defaultValue = defaultValue;
+            this.current = current;
+            this.saved = current;
+            this.formatter = formatter;
+        }
 
-    // -------- Range --------
-    private String mRangeTitle;
-    private int mRangeMin = 0;
-    private int mRangeMax = 100;
-    private int mRangeDefault = 50;
-    private int mRangeCurrent = 50;
-    private int mOldRange = 50;
-    private String mRangeFormatter = "%s";
+        public void enableRateBoost(boolean enabled)
+        {
+            hasRateBoost = true;
+            boost = enabled;
+            savedBoost = enabled;
+        }
+    }
 
-    // -------- Volume --------
-    private String mVolTitle;
-    private int mVolMin = 0;
-    private int mVolMax = 100;
-    private int mVolDefault = 50;
-    private int mVolCurrent = 50;
-    private int mOldVol = 50;
-    private String mVolFormatter = "%s";
+    private final List<Parameter> mParameters = new ArrayList<Parameter>();
 
     public SeekBarPreference(Context context, AttributeSet attrs, int defStyle)
     {
@@ -114,219 +131,99 @@ public class SeekBarPreference extends DialogPreference
         this(context, null);
     }
 
-    // -------- Config setters --------
-
-    public void setRateConfig(String title, int min, int max, int defaultValue, int current, boolean boostCurrent, String formatter)
+    public void addParameter(Parameter parameter)
     {
-        mRateTitle = title;
-        mRateMin = min;
-        mRateMax = max;
-        mRateDefault = defaultValue;
-        mRateCurrent = current;
-        mOldRate = current;
-        mRateBoostCurrent = boostCurrent;
-        mOldRateBoost = boostCurrent;
-        mRateFormatter = formatter;
-    }
-
-    public void setPitchConfig(String title, int min, int max, int defaultValue, int current, String formatter)
-    {
-        mPitchTitle = title;
-        mPitchMin = min;
-        mPitchMax = max;
-        mPitchDefault = defaultValue;
-        mPitchCurrent = current;
-        mOldPitch = current;
-        mPitchFormatter = formatter;
-    }
-
-    public void setRangeConfig(String title, int min, int max, int defaultValue, int current, String formatter)
-    {
-        mRangeTitle = title;
-        mRangeMin = min;
-        mRangeMax = max;
-        mRangeDefault = defaultValue;
-        mRangeCurrent = current;
-        mOldRange = current;
-        mRangeFormatter = formatter;
-    }
-
-    public void setVolumeConfig(String title, int min, int max, int defaultValue, int current, String formatter)
-    {
-        mVolTitle = title;
-        mVolMin = min;
-        mVolMax = max;
-        mVolDefault = defaultValue;
-        mVolCurrent = current;
-        mOldVol = current;
-        mVolFormatter = formatter;
+        mParameters.add(parameter);
     }
 
     @Override
     protected View onCreateDialogView()
     {
-        View root = super.onCreateDialogView();
+        final View root = super.onCreateDialogView();
+        final ViewGroup container = (ViewGroup) root.findViewById(R.id.parameters);
+        final LayoutInflater inflater = LayoutInflater.from(getContext());
 
-        mRate = (SeekBar) root.findViewById(R.id.rate);
-        mPitch = (SeekBar) root.findViewById(R.id.pitch);
-        mRange = (SeekBar) root.findViewById(R.id.range);
-        mVol = (SeekBar) root.findViewById(R.id.volume);
-
-        mRateText = (TextView) root.findViewById(R.id.rateText);
-        mPitchText = (TextView) root.findViewById(R.id.pitchText);
-        mRangeText = (TextView) root.findViewById(R.id.rangeText);
-        mVolText = (TextView) root.findViewById(R.id.volumeText);
-
-        mRateBoost = (CheckBox) root.findViewById(R.id.rateBoost);
-
-        mResetRate = (Button) root.findViewById(R.id.resetRateToDefault);
-        mResetPitch = (Button) root.findViewById(R.id.resetPitchToDefault);
-        mResetRange = (Button) root.findViewById(R.id.resetRangeToDefault);
-        mResetVol = (Button) root.findViewById(R.id.resetVolumeToDefault);
-
-        mRate.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser)
-            {
-                // After the user has changed the slider, the new value is
-                // persisted to ensure that eSpeak is using the new value the
-                // next time e.g. TalkBack reads part of the UI.
-
-                updateRateText();
-                persistSettings(mRate.getProgress() + mRateMin, mPitch.getProgress() + mPitchMin, mRange.getProgress() + mRangeMin, mVol.getProgress() + mVolMin, mRateBoost.isChecked());
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar)
-            {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar)
-            {
-            }
-        });
-
-        mPitch.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser)
-            {
-                // After the user has changed the slider, the new value is
-                // persisted to ensure that eSpeak is using the new value the
-                // next time e.g. TalkBack reads part of the UI.
-
-                updatePitchText();
-                persistSettings(mRate.getProgress() + mRateMin, mPitch.getProgress() + mPitchMin, mRange.getProgress() + mRangeMin, mVol.getProgress() + mVolMin, mRateBoost.isChecked());
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar)
-            {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar)
-            {
-            }
-        });
-
-        mRange.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser)
-            {
-                // After the user has changed the slider, the new value is
-                // persisted to ensure that eSpeak is using the new value the
-                // next time e.g. TalkBack reads part of the UI.
-
-                updateRangeText();
-                persistSettings(mRate.getProgress() + mRateMin, mPitch.getProgress() + mPitchMin, mRange.getProgress() + mRangeMin, mVol.getProgress() + mVolMin, mRateBoost.isChecked());
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar)
-            {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar)
-            {
-            }
-        });
-
-        mVol.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser)
-            {
-                // After the user has changed the slider, the new value is
-                // persisted to ensure that eSpeak is using the new value the
-                // next time e.g. TalkBack reads part of the UI.
-
-                updateVolText();
-                persistSettings(mRate.getProgress() + mRateMin, mPitch.getProgress() + mPitchMin, mRange.getProgress() + mRangeMin, mVol.getProgress() + mVolMin, mRateBoost.isChecked());
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar)
-            {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar)
-            {
-            }
-        });
-
-        mRateBoost.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked)
-            {
-                updateRateText();
-                persistSettings(mRate.getProgress() + mRateMin, mPitch.getProgress() + mPitchMin, mRange.getProgress() + mRangeMin, mVol.getProgress() + mVolMin, isChecked);
-            }
-        });
-
-        mResetRate.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v)
-            {
-                mRate.setProgress(mRateDefault - mRateMin);
-                mRateBoost.setChecked(false);
-                updateRateText();
-                persistSettings(mRateDefault, mPitch.getProgress() + mPitchMin, mRange.getProgress() + mRangeMin, mVol.getProgress() + mVolMin, false);
-            }
-        });
-
-        mResetPitch.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v)
-            {
-                mPitch.setProgress(mPitchDefault - mPitchMin);
-                updatePitchText();
-                persistSettings(mRate.getProgress() + mRateMin, mPitchDefault, mRange.getProgress() + mRangeMin, mVol.getProgress() + mVolMin, mRateBoost.isChecked());
-            }
-        });
-
-        mResetRange.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v)
-            {
-                mRange.setProgress(mRangeDefault - mRangeMin);
-                updateRangeText();
-                persistSettings(mRate.getProgress() + mRateMin, mPitch.getProgress() + mPitchMin, mRangeDefault, mVol.getProgress() + mVolMin, mRateBoost.isChecked());
-            }
-        });
-
-        mResetVol.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v)
-            {
-                mVol.setProgress(mVolDefault - mVolMin);
-                updateVolText();
-                persistSettings(mRate.getProgress() + mRateMin, mPitch.getProgress() + mPitchMin, mRange.getProgress() + mRangeMin, mVolDefault, mRateBoost.isChecked());
-            }
-        });
+        for (final Parameter parameter : mParameters) {
+            final View section = inflater.inflate(R.layout.seekbar_preference_section, container, false);
+            bindSection(parameter, section);
+            container.addView(section);
+        }
 
         return root;
+    }
+
+    private void bindSection(final Parameter parameter, View section)
+    {
+        parameter.mSeekBar = (SeekBar) section.findViewById(R.id.seekBar);
+        parameter.mValueText = (TextView) section.findViewById(R.id.valueText);
+        parameter.mRateBoost = (CheckBox) section.findViewById(R.id.rateBoost);
+
+        ((TextView) section.findViewById(R.id.parameterTitle)).setText(parameter.title);
+
+        final Button reset = (Button) section.findViewById(R.id.resetToDefault);
+        // Every section carries an identically labelled button, so name the
+        // parameter for anyone who reaches it with a screen reader.
+        reset.setContentDescription(parameter.title + ", " + reset.getText());
+        reset.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v)
+            {
+                parameter.mSeekBar.setProgress(parameter.defaultValue - parameter.min);
+                // setProgress() reports fromUser == false, so persist here
+                // rather than leaving it to the progress listener.
+                persist(parameter);
+            }
+        });
+
+        parameter.mSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser)
+            {
+                parameter.current = progress + parameter.min;
+                updateValueText(parameter);
+
+                // TalkBack gestures and D-pad presses arrive here with
+                // fromUser set and no surrounding touch gesture, and they are
+                // the only notification we get -- onStopTrackingTouch never
+                // fires for them. Persisting now is what makes the change
+                // audible on the next thing eSpeak speaks.
+                if (fromUser && !parameter.dragging) {
+                    persist(parameter);
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar)
+            {
+                parameter.dragging = true;
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar)
+            {
+                parameter.dragging = false;
+                persist(parameter);
+            }
+        });
+
+        if (parameter.hasRateBoost) {
+            // Checked before the listener is attached, so restoring the stored
+            // state does not count as toggling it and write it straight back.
+            parameter.mRateBoost.setChecked(parameter.boost);
+            parameter.mRateBoost.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(CompoundButton buttonView, boolean isChecked)
+                {
+                    parameter.boost = isChecked;
+                    updateValueText(parameter);
+                    persist(parameter);
+                }
+            });
+        } else {
+            parameter.mRateBoost.setVisibility(View.GONE);
+        }
+
+        attachRotaryEncoder(parameter);
     }
 
     @Override
@@ -334,35 +231,32 @@ public class SeekBarPreference extends DialogPreference
     {
         super.onBindDialogView(view);
 
-        mRate.setMax(mRateMax - mRateMin);
-        mPitch.setMax(mPitchMax - mPitchMin);
-        mRange.setMax(mRangeMax - mRangeMin);
-        mVol.setMax(mVolMax - mVolMin);
+        for (Parameter parameter : mParameters) {
+            // Read before touching the SeekBar: setMax() notifies the progress
+            // listener, which writes the slider's position -- still zero at
+            // that point -- back over parameter.current.
+            final int value = parameter.current;
 
-        mRate.setProgress(mRateCurrent - mRateMin);
-        mPitch.setProgress(mPitchCurrent - mPitchMin);
-        mRange.setProgress(mRangeCurrent - mRangeMin);
-        mVol.setProgress(mVolCurrent - mVolMin);
+            parameter.saved = value;
+            parameter.savedBoost = parameter.boost;
 
-        mRateBoost.setChecked(mRateBoostCurrent);
+            // Neither call persists anything, because neither reports itself
+            // as a change made by the user. That is what keeps opening the
+            // dialog from publishing a half-initialised set of values; an
+            // earlier revision announced rate = 80 WPM and volume = 0 here.
+            parameter.mSeekBar.setMax(parameter.max - parameter.min);
+            parameter.mSeekBar.setProgress(value - parameter.min);
+            parameter.current = value;
 
-        mOldRate = mRateCurrent;
-        mOldRateBoost = mRateBoostCurrent;
-        mOldPitch = mPitchCurrent;
-        mOldRange = mRangeCurrent;
-        mOldVol = mVolCurrent;
+            updateValueText(parameter);
+        }
 
-        attachRotaryEncoder(mRate, mRateMin, mRateMax);
-        attachRotaryEncoder(mPitch, mPitchMin, mPitchMax);
-        attachRotaryEncoder(mRange, mRangeMin, mRangeMax);
-        attachRotaryEncoder(mVol, mVolMin, mVolMax);
-
-        mRate.requestFocus();
-
-        updateRateText();
-        updatePitchText();
-        updateRangeText();
-        updateVolText();
+        // Only meaningful for the one-parameter (Wear) dialog, where it hands
+        // the crown to the single slider. With four sliders there is nothing
+        // sensible to focus, and taking focus would just misdirect the crown.
+        if (mParameters.size() == 1) {
+            mParameters.get(0).mSeekBar.requestFocus();
+        }
     }
 
     @Override
@@ -370,14 +264,13 @@ public class SeekBarPreference extends DialogPreference
     {
         switch (which) {
             case DialogInterface.BUTTON_POSITIVE:
-                // Update the last saved values so this will be persisted when
+                // Update the last saved values so these will be persisted when
                 // the dialog is dismissed.
 
-                mOldRate = mRate.getProgress() + mRateMin;
-                mOldRateBoost = mRateBoost.isChecked();
-                mOldPitch = mPitch.getProgress() + mPitchMin;
-                mOldRange = mRange.getProgress() + mRangeMin;
-                mOldVol = mVol.getProgress() + mVolMin;
+                for (Parameter parameter : mParameters) {
+                    parameter.saved = parameter.current;
+                    parameter.savedBoost = parameter.boost;
+                }
                 break;
         }
         super.onClick(dialog, which);
@@ -391,8 +284,8 @@ public class SeekBarPreference extends DialogPreference
         //   2.  Pressing the Cancel (negative) button.
         //   3.  Pressing the Back button.
         //
-        // For [1], the new values needs to be persisted. For [2] and [3], the
-        // old values needs to be persisted (so the last saved values are
+        // For [1], the new values need to be persisted. For [2] and [3], the
+        // old values need to be persisted (so the last saved values are
         // restored). As there is no easy way to override the Dialog's back
         // button pressed handler, the following approach is used:
         //
@@ -402,82 +295,83 @@ public class SeekBarPreference extends DialogPreference
         // 2.  In all cases, the last saved values are persisted when the dialog
         //     is closed (in this onDismiss handler).
 
-        persistSettings(mOldRate, mOldPitch, mOldRange, mOldVol, mOldRateBoost);
-
-        mRateCurrent = mOldRate;
-        mPitchCurrent = mOldPitch;
-        mRangeCurrent = mOldRange;
-        mVolCurrent = mOldVol;
-        mRateBoostCurrent = mOldRateBoost;
+        for (Parameter parameter : mParameters) {
+            parameter.current = parameter.saved;
+            parameter.boost = parameter.savedBoost;
+            persist(parameter);
+        }
 
         String summary = buildSummary();
         callChangeListener(summary);
         setSummary(summary);
     }
 
-    // -------- Per-bar text updates --------
-
-    private void updateRateText()
+    /**
+     * The value to show for a parameter, which is not the stored value when
+     * the rate boost multiplies it.
+     */
+    private int getDisplayValue(Parameter parameter)
     {
-        int display = mRate.getProgress() + mRateMin;
-        if (mRateBoost.isChecked()) {
-            display = display * VoiceSettings.RATE_BOOST_MULTIPLIER;
-            int boostedMax = mRateMax * VoiceSettings.RATE_BOOST_MULTIPLIER;
-            if (display > boostedMax) {
-                display = boostedMax;
+        int value = parameter.current;
+        if (parameter.hasRateBoost && parameter.boost) {
+            value = value * VoiceSettings.RATE_BOOST_MULTIPLIER;
+            int boostedMax = parameter.max * VoiceSettings.RATE_BOOST_MULTIPLIER;
+            if (value > boostedMax) {
+                value = boostedMax;
             }
         }
-        String text = String.format(mRateFormatter, Integer.toString(display));
-        mRateText.setText(text);
-        mRate.setContentDescription(text);
+        return value;
     }
 
-    private void updatePitchText()
+    private void updateValueText(Parameter parameter)
     {
-        String text = String.format(mPitchFormatter, Integer.toString(mPitch.getProgress() + mPitchMin));
-        mPitchText.setText(text);
-        mPitch.setContentDescription(text);
+        String text = String.format(parameter.formatter, Integer.toString(getDisplayValue(parameter)));
+        parameter.mValueText.setText(text);
+        // A bare "50%" is ambiguous once pitch and pitch variation share a
+        // dialog, so the announcement carries the parameter name too. This
+        // replaces the percentage of the slider's range that a SeekBar would
+        // otherwise announce, which means nothing for these values.
+        parameter.mSeekBar.setContentDescription(parameter.title + ", " + text);
     }
 
-    private void updateRangeText()
+    /**
+     * Writes one parameter through to the settings eSpeak actually reads, so a
+     * change is audible immediately rather than at the next dialog dismissal.
+     *
+     * apply() rather than commit(): the in-memory value is updated before this
+     * returns, which is all TtsService needs since it reads the same
+     * SharedPreferences instance in this process, and the disk write stays off
+     * the main thread. Rotary detents and TalkBack steps arrive one after
+     * another, so a synchronous write here would be felt.
+     */
+    private void persist(Parameter parameter)
     {
-        String text = String.format(mRangeFormatter, Integer.toString(mRange.getProgress() + mRangeMin));
-        mRangeText.setText(text);
-        mRange.setContentDescription(text);
-    }
-
-    private void updateVolText()
-    {
-        String text = String.format(mVolFormatter, Integer.toString(mVol.getProgress() + mVolMin));
-        mVolText.setText(text);
-        mVol.setContentDescription(text);
-    }
-
-    // -------- Persistence --------
-
-    private void persistSettings(int rate, int pitch, int range, int vol, boolean boost)
-    {
-        if (shouldCommit()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                PreferenceManager preferenceManager = getPreferenceManager();
-                preferenceManager.setStorageDeviceProtected();
-            }
-            SharedPreferences.Editor editor = getDeviceProtectedPreferences().edit();
-            editor.putString(VoiceSettings.PREF_RATE, String.valueOf(rate));
-            editor.putString(VoiceSettings.PREF_PITCH, String.valueOf(pitch));
-            editor.putString(VoiceSettings.PREF_PITCH_RANGE, String.valueOf(range));
-            editor.putString(VoiceSettings.PREF_VOLUME, String.valueOf(vol));
-            editor.putBoolean(VoiceSettings.PREF_RATE_BOOST, boost);
-            editor.commit();
+        if (!shouldCommit()) {
+            return;
         }
+
+        SharedPreferences.Editor editor = getDeviceProtectedPreferences().edit();
+        editor.putString(parameter.key, Integer.toString(parameter.current));
+        if (parameter.hasRateBoost) {
+            editor.putBoolean(VoiceSettings.PREF_RATE_BOOST, parameter.boost);
+        }
+        editor.apply();
     }
 
-    // -------- Wear OS rotary encoder --------
-
-    private void attachRotaryEncoder(final SeekBar seekBar, final int min, final int max)
+    /**
+     * Wire the Wear OS rotating crown to a slider. Rotary input is delivered
+     * as ACTION_SCROLL events on SOURCE_ROTARY_ENCODER and only reaches the
+     * focused view, so the slider has to be focusable and, in the
+     * one-parameter dialog, take focus when it opens. The listener is a no-op
+     * on phones (no rotary device ever fires it), so this code path stays
+     * harmless on non-watch builds.
+     */
+    private void attachRotaryEncoder(final Parameter parameter)
     {
-        final int range = max - min;
+        final SeekBar seekBar = parameter.mSeekBar;
+        final int range = parameter.max - parameter.min;
         final int step = Math.max(1, range / 40);
+
         seekBar.setOnGenericMotionListener(new View.OnGenericMotionListener() {
             @Override
             public boolean onGenericMotion(View v, MotionEvent ev)
@@ -494,6 +388,9 @@ public class SeekBarPreference extends DialogPreference
                 int updated = Math.max(0, Math.min(range, seekBar.getProgress() + delta));
                 if (updated != seekBar.getProgress()) {
                     seekBar.setProgress(updated);
+                    // As with the reset button: setProgress() is not a user
+                    // change as far as the listener is concerned, but this is.
+                    persist(parameter);
                     v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
                 }
                 return true;
@@ -503,26 +400,24 @@ public class SeekBarPreference extends DialogPreference
         seekBar.setFocusableInTouchMode(true);
     }
 
-    // -------- Summary --------
-
+    /**
+     * The preference row's summary: the value on its own when the preference
+     * owns a single parameter, otherwise each parameter named and listed.
+     */
     public String buildSummary()
     {
-        int rateDisplay = mRateCurrent;
-        if (mRateBoostCurrent) {
-            rateDisplay = rateDisplay * VoiceSettings.RATE_BOOST_MULTIPLIER;
-            int boostedMax = mRateMax * VoiceSettings.RATE_BOOST_MULTIPLIER;
-            if (rateDisplay > boostedMax) {
-                rateDisplay = boostedMax;
+        StringBuilder summary = new StringBuilder();
+        for (Parameter parameter : mParameters) {
+            if (summary.length() > 0) {
+                summary.append(", ");
             }
+            if (mParameters.size() > 1) {
+                summary.append(parameter.title).append(": ");
+            }
+            summary.append(String.format(parameter.formatter, Integer.toString(getDisplayValue(parameter))));
         }
-
-        return mRateTitle + ": " + String.format(mRateFormatter, Integer.toString(rateDisplay)) + ", "
-             + mPitchTitle + ": " + String.format(mPitchFormatter, Integer.toString(mPitchCurrent)) + ", "
-             + mRangeTitle + ": " + String.format(mRangeFormatter, Integer.toString(mRangeCurrent)) + ", "
-             + mVolTitle + ": " + String.format(mVolFormatter, Integer.toString(mVolCurrent));
+        return summary.toString();
     }
-
-    // -------- Helpers --------
 
     private SharedPreferences getDeviceProtectedPreferences()
     {
