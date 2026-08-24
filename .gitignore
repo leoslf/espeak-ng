@@ -227,3 +227,17 @@ espeak-ng-data/phontab
 
 espeak-ng-data/mbrola/
 espeak-ng-data/mbrola_ph/*_phtrans
+
+# Cmake
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake/install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+CMakeUserPresets.json
