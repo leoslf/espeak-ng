@@ -31,6 +31,17 @@ if (WITH_COVERAGE)
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
 endif()
 
+# uninstall target
+if(NOT TARGET uninstall)
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/uninstall.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake/uninstall.cmake"
+    IMMEDIATE @ONLY)
+
+  add_custom_target(uninstall
+    COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake/uninstall.cmake)
+endif()
+
 include(GNUInstallDirs)
 include(cmake/deps.cmake)
 include(cmake/config.cmake)
