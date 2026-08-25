@@ -80,10 +80,12 @@ void unload_MBR()
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <endian.h>
 
 #include <espeak-ng/espeak_ng.h>
 
@@ -468,8 +470,7 @@ static int init_mbrola(char *voice_path)
 		stop_mbrola();
 		return -1;
 	}
-	mbr_samplerate = wavhdr[24] + (wavhdr[25]<<8) +
-	                 (wavhdr[26]<<16) + (wavhdr[27]<<24);
+	mbr_samplerate = (int) le32toh(*(uint32_t *)(wavhdr + 24));
 
 	// remember the voice path for setVolumeRatio_MBR()
 	if (mbr_voice_path != voice_path) {
