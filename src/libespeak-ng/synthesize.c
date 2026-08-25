@@ -1236,6 +1236,9 @@ int Generate(PHONEME_LIST *phoneme_list, int *n_ph, bool resume)
 			}
 		}
 
+		if (option_phonemes & espeakPHONEMES_DEBUG)
+			fprintf(stderr, "[SYNTH_TRACE] Processing p->type: %d\n", p->type);
+
 		switch (p->type)
 		{
 		case phPAUSE:
@@ -1272,13 +1275,25 @@ int Generate(PHONEME_LIST *phoneme_list, int *n_ph, bool resume)
 			phdata.pd_control |= pd_DONTLENGTHEN;
 			DoSample3(&phdata, 0, 0);
 			break;
-		case phFRICATIVE:
+		case phFRICATIVE: {
 			InterpretPhoneme(NULL, 0, p, phoneme_list, &phdata, &worddata);
 
-			if (p->synthflags & SFLAG_LENGTHEN)
-				DoSample3(&phdata, p->length, 0); // play it twice for [s:] etc.
-			DoSample3(&phdata, p->length, 0);
+
+			if (option_phonemes & espeakPHONEMES_DEBUG)
+				fprintf(stderr, "[SYNTH_TRACE] Processing phFRICATIVE: sound_addr[pd_WAV]=%d, p->length=%d\n",
+						phdata.sound_addr[pd_WAV], p->length);
+
+			if (p->synthflags & SFLAG_LENGTHEN) {
+				// play it twice for [s:] etc.
+				int len_first = DoSample3(&phdata, p->length, 0);
+				if (option_phonemes & espeakPHONEMES_DEBUG)
+					fprintf(stderr, "[SYNTH_TRACE]   -> lengthened sample 1 returned len=%d\n", len_first);
+			}
+			int len_main = DoSample3(&phdata, p->length, 0);
+			if (option_phonemes & espeakPHONEMES_DEBUG)
+				fprintf(stderr, "[SYNTH_TRACE]   -> main sample returned len=%d\n", len_main);
 			break;
+		}
 		case phVSTOP:
 			ph = p->ph;
 			memset(&fmtp, 0, sizeof(fmtp));

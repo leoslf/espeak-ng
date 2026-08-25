@@ -334,6 +334,7 @@ int main(int argc, char **argv)
 		{ "compile-phonemes", optional_argument, 0, 0x110 },
 		{ "load",    no_argument,       0, 0x111 },
 		{ "ssml-break", required_argument, 0, 0x112 },
+		{ "debug",   optional_argument, 0, 0x113 },
 		{ 0, 0, 0, 0 }
 	};
 
@@ -547,6 +548,9 @@ int main(int argc, char **argv)
 #if USE_MBROLA
 		case 0x10e: // --compile-mbrola
 		{
+			// make option_phonemes available
+			espeak_SetPhonemeTrace(phoneme_options | (phonemes_separator << 8), f_phonemes_out);
+
 			espeak_ng_InitializePath(data_path);
 			espeak_ng_ERROR_CONTEXT context = NULL;
 			espeak_ng_STATUS result = espeak_ng_CompileMbrolaVoice(optarg2, stdout, &context);
@@ -592,6 +596,9 @@ int main(int argc, char **argv)
 			break;
 		case 0x112: // --ssml-break
 			ssml_break = atoi(optarg2);
+			break;
+		case 0x113: // --debug
+			phoneme_options |= espeakPHONEMES_DEBUG;
 			break;
 		default:
 			exit(0);

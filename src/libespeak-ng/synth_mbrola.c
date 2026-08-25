@@ -62,6 +62,13 @@ static MBROLA_TAB *mbrola_tab = NULL;
 static int mbrola_control = 0;
 static int mbr_name_prefix = 0;
 
+#define MBR_TRACE(fmt, ...) \
+	do { \
+		if (option_phonemes & espeakPHONEMES_DEBUG) { \
+			fprintf(stderr, "[MBR_TRACE] " fmt "\n", ##__VA_ARGS__); \
+		} \
+	} while (0)
+
 static const char *system_data_dirs(void)
 {
 	// XDG Base Directory Specification
@@ -144,6 +151,8 @@ espeak_ng_STATUS LoadMbrolaTable(const char *mbrola_voice, const char *phtrans, 
 	close_MBR();
 #endif
 
+	MBR_TRACE("MBROLA voice file: %s", path);
+
 	if (init_MBR(path) != 0) // initialise the required mbrola voice
 		return ENS_MBROLA_VOICE_NOT_FOUND;
 
@@ -151,6 +160,8 @@ espeak_ng_STATUS LoadMbrolaTable(const char *mbrola_voice, const char *phtrans, 
 
 	// read eSpeak's mbrola phoneme translation data, eg. en1_phtrans
 	snprintf(path, sizeof(path), "%s/mbrola_ph/%s", path_home, phtrans);
+	MBR_TRACE("MBROLA phoneme translation file: %s", path);
+
 	size = GetFileLength(path);
 	if (size < 0) // size == -errno
 		return -size;
@@ -209,9 +220,26 @@ static int GetMbrName(PHONEME_LIST *plist, PHONEME_TAB *ph, PHONEME_TAB *ph_prev
 	*control = 0;
 	mnem = ph->mnemonic;
 
+	{
+		char cur_buf[5];
+		WordToString(cur_buf, mnem);
+		MBR_TRACE("=== Scanning rules for input phoneme: '%s' (mnemonic=%d) ===", cur_buf, mnem);
+	}
+
 	pr = mbrola_tab;
 	while (pr->name != 0) {
 		if (mnem == pr->name) {
+			{
+				char cur_buf[5], next_req_buf[5], mbr1_buf[5], mbr2_buf[5];
+				WordToString(cur_buf, mnem);
+				WordToString(next_req_buf, pr->next_phoneme);
+				WordToString(mbr1_buf, pr->mbr_name);
+				WordToString(mbr2_buf, pr->mbr_name2);
+
+				MBR_TRACE("  [TRIED] Base match found for '%s'. Rule requirement -> next_phoneme: '%s' (val=%d), control: 0x%X",
+							   cur_buf, next_req_buf, pr->next_phoneme, pr->control);
+			}
+
 			if (pr->next_phoneme == 0)
 				found = true;
 			else if ((pr->next_phoneme == ':') && (plist->synthflags & SFLAG_LENGTHEN))
@@ -230,14 +258,23 @@ static int GetMbrName(PHONEME_LIST *plist, PHONEME_TAB *ph, PHONEME_TAB *ph_prev
 					found = true;
 			}
 
-			if ((pr->control & 4) && (plist->newword == 0)) // only at start of word
+			if ((pr->control & 4) && (plist->newword == 0)) { // only at start of word
+				if (found)
+					MBR_TRACE("    -> [SKIPPED] Control flag bit 2 (start of word) failed.");
 				found = false;
+			}
 
-			if ((pr->control & 0x40) && (plist[1].newword == 0)) // only at the end of a word
+			if ((pr->control & 0x40) && (plist[1].newword == 0)) { // only at the end of a word
+				if (found)
+					MBR_TRACE("    -> [SKIPPED] Control flag bit 6 (end of word) failed.");
 				found = false;
+			}
 
-			if ((pr->control & 0x20) && (plist->stresslevel < plist->wordstress))
+			if ((pr->control & 0x20) && (plist->stresslevel < plist->wordstress)) {
+				if (found)
+					MBR_TRACE("    -> [SKIPPED] Control flag bit 5 (stressed syllable) failed.");
 				found = false; // only in stressed syllables
+			}
 
 			if (found) {
 				*name2 = pr->mbr_name2;
@@ -250,10 +287,19 @@ static int GetMbrName(PHONEME_LIST *plist, PHONEME_TAB *ph, PHONEME_TAB *ph_prev
 				}
 				mnem = pr->mbr_name;
 				break;
+			} else {
+				MBR_TRACE("    -> [SKIPPED] Context or flag conditions did not align.");
 			}
 		}
 
 		pr++;
+	}
+
+	{
+		char cur_buf[5], final_buf[5];
+		WordToString(cur_buf, mnem);
+		WordToString(final_buf, mnem);
+		MBR_TRACE("=== Final result for phoneme '%s' -> MBR mnem: '%s' ===", cur_buf, final_buf);
 	}
 
 	if (mbr_name_prefix != 0)
@@ -391,6 +437,7 @@ int MbrolaTranslate(PHONEME_LIST *plist, int n_phonemes, bool resume, FILE *f_mb
 		phix = 1;
 		embedded_ix = 0;
 		word_count = 0;
+		MBR_TRACE("MbrolaTranslate initialized: reset state (resume=%d, n_phonemes=%d)", resume, n_phonemes);
 	}
 
 	while (phix < n_phonemes) {
@@ -413,12 +460,29 @@ int MbrolaTranslate(PHONEME_LIST *plist, int n_phonemes, bool resume, FILE *f_mb
 		if (p->newword & PHLIST_START_OF_SENTENCE)
 			DoMarker(espeakEVENT_WORD, (p->sourceix & 0x7ff) + clause_start_char, p->sourceix >> 11, clause_start_word + word_count++);
 
+		{
+			char ph_name[16] = {0};
+			char next_ph_name[16] = {0};
+			WritePhMnemonic(ph_name, ph, p, 1, NULL);
+			if (ph_next)
+				WritePhMnemonic(next_ph_name, ph_next, next, 1, NULL);
+
+			MBR_TRACE("Processing phoneme: '%s' (next: '%s') at index %d", ph_name, next_ph_name, phix);
+		}
+
 		name = GetMbrName(p, ph, ph_prev, ph_next, &name2, &len_percent, &control);
+		{
+			char phbuf_name[5];
+			char phbuf_name2[5];
+			MBR_TRACE("    -> MATCHED Rule/Mapping Result: name=%s, name2=%s, control=%d, len_percent=%d", name ? WordToString(phbuf_name, name) : "NULL", name2 ? WordToString(phbuf_name2, name2) : "NULL", control, len_percent);
+		}
+
 		if (control & 1)
 			phix++;
 
 		if (name == 0) {
 			phix++;
+			MBR_TRACE("Skipping phoneme at phix=%d: mapped name is NULL", phix);
 			continue; // ignore this phoneme
 		}
 
@@ -448,6 +512,7 @@ int MbrolaTranslate(PHONEME_LIST *plist, int n_phonemes, bool resume, FILE *f_mb
 		done = false;
 		final_pitch = "";
 
+		MBR_TRACE("ph->type: %d", ph->type);
 		switch (ph->type)
 		{
 		case phVOWEL:
@@ -495,6 +560,7 @@ int MbrolaTranslate(PHONEME_LIST *plist, int n_phonemes, bool resume, FILE *f_mb
 		case phFRICATIVE:
 			len = 0;
 			InterpretPhoneme(NULL, 0, p, plist, &phdata, NULL);
+			MBR_TRACE("phFRICATIVE: p->length=%d, sound_addr[pd_WAV]=%d", p->length, phdata.sound_addr[pd_WAV]);
 			if (p->synthflags & SFLAG_LENGTHEN)
 				len = DoSample3(&phdata, p->length, -1); // play it twice for [s:] etc.
 			len += DoSample3(&phdata, p->length, -1);
@@ -545,9 +611,11 @@ int MbrolaTranslate(PHONEME_LIST *plist, int n_phonemes, bool resume, FILE *f_mb
 			pause = 0;
 		}
 
-		if (f_mbrola)
+		if (f_mbrola) {
+			MBR_TRACE("Writing to file stream for phix=%d: %.*s", phix, (int)(ptr - mbr_buf), mbr_buf);
 			fwrite(mbr_buf, 1, (ptr-mbr_buf), f_mbrola); // write .pho to a file
-		else {
+		} else {
+			MBR_TRACE("Enqueuing to audio command queue for phix=%d (len=%d)", phix, len);
 			int res = write_MBR(mbr_buf);
 			if (res < 0)
 				return 0;  // don't get stuck on error
@@ -562,6 +630,7 @@ int MbrolaTranslate(PHONEME_LIST *plist, int n_phonemes, bool resume, FILE *f_mb
 	}
 
 	if (!f_mbrola) {
+		MBR_TRACE("Flushing MBROLA buffer at end of translation sequence");
 		flush_MBR();
 
 		// flush the mbrola output buffer

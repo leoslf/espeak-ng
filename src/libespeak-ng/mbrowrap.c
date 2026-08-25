@@ -91,6 +91,8 @@ void unload_MBR()
 
 #include "platform.h"
 
+extern int option_phonemes;
+
 /*
  * mbrola instance parameters
  */
@@ -328,6 +330,12 @@ static int mbrola_is_idle(void)
 	return process_is_idle(&process);
 }
 
+#define DEBUG(fmt, ...) \
+	do { \
+		if (option_phonemes & espeakPHONEMES_DEBUG) \
+			fprintf(stderr, "[DEBUG] mbrowrap: " fmt, ##__VA_ARGS__); \
+	} while (0)
+
 static ssize_t receive_from_mbrola(void *buffer, size_t bufsize)
 {
 	int result, wait = process_poll_initial_wait();
@@ -336,10 +344,9 @@ static ssize_t receive_from_mbrola(void *buffer, size_t bufsize)
 	if (!process.pid)
 		return -1;
 
-	extern int option_phonemes;
-	if (option_phonemes & espeakPHONEMES_MBROLA)
-		return -1;
+	DEBUG("receive_from_mbrola");
 
+	int retries = 0;
 	do {
 		struct pollfd pollfd[3];
 		nfds_t nfds = 0;
@@ -360,6 +367,8 @@ static ssize_t receive_from_mbrola(void *buffer, size_t bufsize)
 		}
 
 		idle = mbrola_is_idle();
+		DEBUG("receive_from_mbrola: retries: %d, idle: %d, wait: %d, errno: %d %s", retries, idle, wait, errno, strerror(errno));
+
 		result = poll(pollfd, nfds, process_poll_timeout(idle, wait));
 		if (result == -1) {
 			err("poll(): %s", strerror(errno));
@@ -379,9 +388,14 @@ static ssize_t receive_from_mbrola(void *buffer, size_t bufsize)
 			}
 
 			wait = process_poll_backoff(wait);
-			continue;
+			goto update_retries;
 		}
 		wait = process_poll_initial_wait();
+
+		for (int i = 0; i <= 2; ++i)
+			if (pollfd[i].revents)
+				DEBUG("receive_from_mbrola: retries: %d, pollfd[%d].revents: %hd\n", retries, i, pollfd[i].revents);
+
 
 		if (pollfd[1].revents && mbrola_has_errors())
 			return -1;
@@ -405,7 +419,7 @@ static ssize_t receive_from_mbrola(void *buffer, size_t bufsize)
 				free(head);
 
 				if (mbr_pending_data_head)
-					continue;
+					goto update_retries;
 
 				mbr_pending_data_tail = NULL;
 			}
@@ -423,6 +437,8 @@ static ssize_t receive_from_mbrola(void *buffer, size_t bufsize)
 			mbr_state = MBR_AUDIO;
 		}
 
+update_retries:
+		++retries;
 	} while (cursize < bufsize);
 
 	return cursize;
