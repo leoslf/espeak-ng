@@ -74,7 +74,14 @@ test_phon() {
         $VALGRIND src/espeak-ng -xq ${OPTIONS} -v ${TEST_LANG} "${TEST_TEXT}" || exit 1
     )
     if [ "x$RESULT" != "x$EXPECTED" ] ; then
-        echo "$RESULT != $EXPECTED"
+        if [[ $OPTIONS == *--pho* ]]; then
+            if [[ $line != *$'\n' ]]; then
+                echo "$TEST_TEXT"
+            fi
+            diff -U64 <(echo "$EXPECTED") <(echo "$RESULT")
+        else
+            echo "$RESULT != $EXPECTED"
+        fi
         if [ "$MESSAGE" = "Ignore" ] ; then
             echo "... ignoring error"
         else
