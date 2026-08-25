@@ -1,3 +1,19 @@
+// stop-to-fricative: mbrola does not have recordings of these
+0  b   s     0  b _
+0  p   s     0  p _
+0  t   s     0  t _
+0  d   s     0  d _
+0  k   s     0  k _
+0  g   s     0  g _
+
+// stop-to-stop
+0  d   p     0  d _
+0  d   t     0  d _
+0  b   p     0  b _
+0  b   t     0  b _
+0  g   k     0  g _
+0  t   p     0  t _
+
 // palatal glide cluster safety rule (missing j-j diphone)
 0  j   j     200 j
 2  j   j     0   NULL
