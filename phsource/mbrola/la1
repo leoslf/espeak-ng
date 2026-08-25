@@ -1,30 +1,6 @@
-// geminate/lengthened stops
-0  p   :     0  p:
-0  b   :     0  b:
-0  t   :     0  t:
-0  d   :     0  d:
-0  k   :     0  k:
-0  g   :     0  g:
-
-// continuants and nasals
-9  f   f     0  f:
-9  s   s     0  s:
-9  z   z     0  z:
-9  m   m     0  m:
-9  n   n     0  n:
-
-// liquids and glides
-9  j/  j     0  j:
-0  j/  NULL  0  j
-0  l/  NULL  0  l
-9  l/2 l     0  l:
-0  l/2 NULL  0  l
-
-// diphthongs
-0  aI  NULL  0  aE
-0  aU  NULL  0  aU
-0  oI  NULL  0  oE
-0  EU  NULL  60 E U
+// palatal glide cluster safety rule (missing j-j diphone)
+0  j   j     200 j
+2  j   j     0   NULL
 
 // geminated/lengthened stops
 0  p   :     0  p:
@@ -33,6 +9,7 @@
 0  d   :     0  d:
 0  k   :     0  k:
 0  g   :     0  g:
+0  j   :     0  j:
 
 // continuants and nasals
 9  f   f     0  f:
