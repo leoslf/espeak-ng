@@ -385,6 +385,8 @@ int MbrolaTranslate(PHONEME_LIST *plist, int n_phonemes, bool resume, FILE *f_mb
 	static int embedded_ix;
 	static int word_count;
 
+	const int pause_length = 50;
+
 	if (!resume) {
 		phix = 1;
 		embedded_ix = 0;
@@ -454,7 +456,7 @@ int MbrolaTranslate(PHONEME_LIST *plist, int n_phonemes, bool resume, FILE *f_mb
 				len += phoneme_tab[phonLENGTHEN]->std_length; // phoneme was followed by an extra : symbol
 
 			if (ph_next->type == phPAUSE)
-				len += 50; // lengthen vowels before a pause
+				len += pause_length; // lengthen vowels before a pause
 			len = (len * p->length)/256;
 
 			if (name2 == 0 || len_percent > 100) {
@@ -507,13 +509,13 @@ int MbrolaTranslate(PHONEME_LIST *plist, int n_phonemes, bool resume, FILE *f_mb
 				len = DoSpect2(p->ph, 0, &fmtp,  p, -1);
 				len = (len * 1000)/samplerate;
 				if (next->type == phPAUSE)
-					len += 50;
+					len += pause_length;
 				final_pitch = WritePitch(p->env, p->pitch1, p->pitch2, 0, 1);
 			}
 			break;
 		case phLIQUID:
 			if (next->type == phPAUSE) {
-				len += 50;
+				len += pause_length;
 				final_pitch = WritePitch(p->env, p->pitch1, p->pitch2, 0, 1);
 			}
 			break;
