@@ -445,6 +445,10 @@ static int init_mbrola(char *voice_path)
 	// Linux (WSL). Otherwise, the receive_from_mbrola call to read the
 	// wav header from mbrola will fail.
 	usleep(100);
+	// clear the residual ETIMEDOUT from usleep
+	if (errno == ETIMEDOUT) {
+		errno = 0;
+	}
 
 	result = send_to_mbrola("#\n");
 	if (result != 2) {
