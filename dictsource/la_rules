@@ -129,6 +129,11 @@
 .group ī
              ī            i:
 
+.group j
+             j            j
+             jj           j:
+    // Intervocalic gemination between vowels, e.g., dejectus -> dej-jectus
+          A) j (A+        j:
 
 .group k
              k            k
@@ -242,5 +247,4 @@
 
 
 .group
-             j            j
              w            w
