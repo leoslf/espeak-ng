@@ -44,7 +44,8 @@
 // diphthongs
 0  aI  NULL  0  aE
 0  aU  NULL  0  aU
-0  oI  NULL  0  oE
+0  oI  NULL  0  OE
+0  OI  NULL  0  OE
 0  EU  NULL  60 E U
 
 // approximants, markers and vowel/syllable adjustments
