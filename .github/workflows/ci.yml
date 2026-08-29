@@ -190,7 +190,7 @@ jobs:
       run: |
         [ 'x${{ matrix.cross }}' == 'xno' ] && sudo dpkg --add-architecture ${{ matrix.arch }}
         sudo apt-get update
-        sudo apt-get install ronn kramdown python3
+        sudo apt-get install ronn kramdown python3 mbrola mbrola-* tree # FIXME
     - name: apt-arch-deps
       if: matrix.os == 'ubuntu' && matrix.cross == 'no'
       run: "sudo apt-get install cmake valgrind g++-12-multilib linux-libc-dev:${{ matrix.arch }} libpcaudio-dev:${{ matrix.arch }} libsonic-dev:${{ matrix.arch }} libc6-dbg:${{ matrix.arch }} libgcc-s1:${{ matrix.arch }}"
@@ -204,13 +204,77 @@ jobs:
     # MacOS - dependencies
     - name: brew-deps
       if: matrix.os == 'macos'
-      run: brew install cmake ronn OJFord/homebrew-formulae/kramdown
+      run: |
+        brew install cmake ronn OJFord/homebrew-formulae/kramdown tree # FIXME
+
+        # install mbrola with voice files
+        brew tap justinokamoto/espeak-ng
+        brew install --HEAD --with-voices justinokamoto/espeak-ng/mbrola
+
     - name: brew-compile-deps
       if: matrix.os == 'macos' && matrix.compiler == 'gcc'
       run: brew install gcc@12
 
     # Checkout code
     - uses: actions/checkout@v7
+
+    - name: Test MBROLA
+      run: |
+        set -e
+        set -x
+        set -o pipefail
+
+        . tests/common
+
+        mbrola -h
+
+        le32toh() {
+          od -An -v -t d4 -N 4 | tr -d ' '
+        }
+
+        is_valid_riff() {
+          EXPECTED_FORMAT="${1?}"
+
+          PAYLOAD="${2?}"
+
+          HEADER_LENGTH="$(echo -n "$PAYLOAD" | head -c 12 | wc -c | tr -d ' ')"
+          if [ "$HEADER_LENGTH" -ne 12 ]; then
+            echo "Invalid header length: $HEADER_LENGTH, expected: 12" 1>&2
+            return 1
+          fi
+
+          CHUNK_ID="$(echo "$PAYLOAD" | dd bs=1 skip=0 count=4)"
+          if [ "$CHUNK_ID" != 'RIFF' ]; then
+            echo "Invalid magic: \"$MAGIC\", expected: RIFF" 1>&2
+            return 1
+          fi
+          }
+
+          if [ "$(echo "$PAYLOAD" | dd bs=1 skip=4 count=1)" = '$' ]; then
+            CHUNK_SIZE='$'
+          else
+            CHUNK_SIZE="$(echo -n "$PAYLOAD" | dd bs=1 skip=4 count=4 | le32toh)"
+          fi
+          CHUNK_SIZE_LENGTH="$(echo "$CHUNK_SIZE" | wc -c | tr -d ' ')"
+
+          FORMAT="$(echo "$PAYLOAD" | dd bs=1 skip=8 count=$((4 + $CHUNK_SIZE_LENGTH)))"
+          if [ "$FORMAT" != "$EXPECTED_FORMAT" ]; then
+            echo "Unexpected format: \"$FORMAT\", expected: $EXPECTED_FORMAT" 1>&2
+            return 1
+          fi
+
+          return 0
+        }
+
+        test_mbrola() {
+          voice=${1?}
+
+          MBROLA_PAYLOAD="$(printf "_\t0\n" | mbrola "$(find_mbrola_voice "$voice")" - -.wav)"
+          is_valid_riff WAVE "$MBROLA_PAYLOAD"
+        }
+        # test la1
+        test_mbrola en1
+        test_mbrola la1
 
     # Configure
     - name: configure
@@ -233,10 +297,11 @@ jobs:
 
     # Build and test
     - name: make-binary
-      run: cmake --build build --target espeak-ng
+      run: cmake --build build --target espeak-ng 
     - name: make-data
       run: ${{ matrix.config_env }} ${{ matrix.runenv }} cmake --build build --target data
     - name: test
       run: |
         ${{ matrix.config_env }} ${{ matrix.runenv }} cmake --build build --target tests
+        tree
         ${{ matrix.config_env }} ${{ matrix.runenv }} ctest --test-dir build -T test -j8 --output-on-failure
